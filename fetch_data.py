@@ -43,11 +43,24 @@ Map.centerObject(roi, 7);
 Map.addLayer(medianComposite.select('NDVI'), {min: 0, max: 1, palette: ['white', 'green']}, 'NDVI Composite');
 Map.addLayer(medianComposite.select('NBR'), {min: -1, max: 1, palette: ['white', 'black', 'red']}, 'NBR Composite');
 
-// Optional: Export to Google Drive
-Export.image.toDrive({
-  image: medianComposite,
-  description: 'Alberta_NDVI_NBR',
-  scale: 30,
+// // Optional: Export to Google Drive
+// Export.image.toDrive({
+//   image: medianComposite,
+//   description: 'Alberta_NDVI_NBR',
+//   scale: 30,
+//   region: roi,
+//   maxPixels: 1e13
+// });
+
+var samplePoints = medianComposite.sample({
   region: roi,
-  maxPixels: 1e13
+  scale: 30,
+  numPixels: 5000,
+  geometries: true
+});
+
+Export.table.toDrive({
+  collection: samplePoints,
+  description: 'Alberta_NDVI_NBR_Extracted',
+  fileFormat: 'CSV'
 });
