@@ -1,0 +1,370 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Data - Wildfire Risk Assessment{% endblock %}
+{% block header %}Upload Satellite Data{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <div class="card upload-card">
+        <div class="card-header">
+            <h3>Upload Satellite Imagery</h3>
+        </div>
+        <div class="card-body">
+            <div class="upload-tabs">
+                <div class="tab-header">
+                    <div class="tab-item active" data-tab="file">
+                        <i class="fas fa-file-upload"></i> File Upload
+                    </div>
+                    <div class="tab-item" data-tab="usb">
+                        <i class="fas fa-usb"></i> USB Device
+                    </div>
+                    <div class="tab-item" data-tab="process">
+                        <i class="fas fa-sync"></i> Process Existing
+                    </div>
+                </div>
+                
+                <div class="tab-content">
+                    <div class="tab-pane active" id="file-tab">
+                        <form id="uploadForm" class="upload-form" enctype="multipart/form-data" method="post">
+                            <div class="form-group">
+                                <label for="sensorType">Sensor Type</label>
+                                <select id="sensorType" name="sensorType" class="form-select">
+                                    <option value="sentinel2">Sentinel-2</option>
+                                    <option value="landsat8">Landsat 8/9</option>
+                                    <option value="modis">MODIS</option>
+                                    <option value="wyvern">Wyvern (Hyperspectral)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="acquisitionDate">Acquisition Date</label>
+                                <input type="date" id="acquisitionDate" name="acquisitionDate" class="form-input">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="region">Region</label>
+                                <select id="region" name="region" class="form-select">
+                                    <option value="northridge">Northridge Canyon</option>
+                                    <option value="eastern">Eastern Foothills</option>
+                                    <option value="pine">Pine Ridge Forest</option>
+                                    <option value="valley">Valley Grasslands</option>
+                                    <option value="custom">Custom Region (Draw on Map)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" id="regionMapContainer" style="display: none;">
+                                <label>Define Custom Region</label>
+                                <div id="regionMap" class="region-map"></div>
+                                <small class="form-text">Click on the map to create a polygon for your custom region.</small>
+                            </div>
+                            
+                            <div class="form-group upload-box">
+                                <label>Upload Files</label>
+                                <div class="dropzone" id="dropzone">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>Drag & drop satellite image files here or click to browse</p>
+                                    <input type="file" id="fileInput" name="files[]" multiple style="display: none;">
+                                </div>
+                                <div class="upload-preview" id="uploadPreview"></div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <div class="form-check">
+                                    <input type="checkbox" id="processImmediately" name="processImmediately" class="form-check-input">
+                                    <label for="processImmediately" class="form-check-label">Process imagery immediately after upload</label>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">Upload & Process</button>
+                                <button type="button" class="btn btn-outline">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="tab-pane" id="usb-tab">
+                        <div class="usb-status">
+                            <i class="fas fa-plug"></i>
+                            <p>Connect a USB device to import satellite imagery</p>
+                            <button type="button" class="btn btn-primary" id="scanUSB">Scan for Devices</button>
+                        </div>
+                        <div class="device-list" id="deviceList" style="display: none;">
+                            <h4>Available Devices</h4>
+                            <div class="device-item">
+                                <div class="device-info">
+                                    <i class="fas fa-usb"></i>
+                                    <div class="device-details">
+                                        <span class="device-name">USB Drive (8GB)</span>
+                                        <span class="device-path">/media/usb0</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-outline">Select</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane" id="process-tab">
+                        <div class="existing-images">
+                            <h4>Recently Added Unprocessed Images</h4>
+                            <div class="image-list">
+                                <div class="image-list-item">
+                                    <div class="image-info">
+                                        <div class="image-thumbnail">
+                                            <img src="{{ url_for('static', filename='img/placeholder-image.svg') }}" alt="Satellite Image">
+                                        </div>
+                                        <div class="image-details">
+                                            <span class="image-name">sentinel2_20250321.zip</span>
+                                            <span class="image-meta">Sentinel-2 • 2025-03-21 • Northridge Canyon</span>
+                                        </div>
+                                    </div>
+                                    <div class="image-actions">
+                                        <button class="btn btn-sm btn-primary">Process</button>
+                                    </div>
+                                </div>
+                                <div class="image-list-item">
+                                    <div class="image-info">
+                                        <div class="image-thumbnail">
+                                            <img src="{{ url_for('static', filename='img/placeholder-image.svg') }}" alt="Satellite Image">
+                                        </div>
+                                        <div class="image-details">
+                                            <span class="image-name">landsat8_20250320.zip</span>
+                                            <span class="image-meta">Landsat 8 • 2025-03-20 • Eastern Foothills</span>
+                                        </div>
+                                    </div>
+                                    <div class="image-actions">
+                                        <button class="btn btn-sm btn-primary">Process</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card help-card">
+        <div class="card-header">
+            <h3>Data Requirements</h3>
+        </div>
+        <div class="card-body">
+            <div class="accordion" id="helpAccordion">
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <button class="accordion-button" type="button" data-toggle="collapse" data-target="#sentinel2Help">
+                            Sentinel-2 Data
+                        </button>
+                    </div>
+                    <div id="sentinel2Help" class="accordion-collapse collapse show">
+                        <div class="accordion-body">
+                            <ul class="help-list">
+                                <li><strong>Required Bands:</strong> B2, B3, B4, B8, B11, B12</li>
+                                <li><strong>Format:</strong> Zipped archive with JPEG2000 or GeoTIFF files</li>
+                                <li><strong>Resolution:</strong> 10m-20m</li>
+                                <li><strong>Source:</strong> <a href="#" class="external-link">Copernicus Open Access Hub</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-toggle="collapse" data-target="#landsatHelp">
+                            Landsat 8/9 Data
+                        </button>
+                    </div>
+                    <div id="landsatHelp" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul class="help-list">
+                                <li><strong>Required Bands:</strong> B2, B3, B4, B5, B6, B7, B10, B11</li>
+                                <li><strong>Format:</strong> Zipped archive with GeoTIFF files</li>
+                                <li><strong>Resolution:</strong> 30m (15m panchromatic)</li>
+                                <li><strong>Source:</strong> <a href="#" class="external-link">USGS EarthExplorer</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-toggle="collapse" data-target="#modisHelp">
+                            MODIS Data
+                        </button>
+                    </div>
+                    <div id="modisHelp" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul class="help-list">
+                                <li><strong>Products:</strong> MOD09, MOD14, MCD64A1</li>
+                                <li><strong>Format:</strong> HDF or GeoTIFF</li>
+                                <li><strong>Resolution:</strong> 250m-1km</li>
+                                <li><strong>Source:</strong> <a href="#" class="external-link">NASA LAADS DAAC</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-toggle="collapse" data-target="#wyvernHelp">
+                            Wyvern (Hyperspectral) Data
+                        </button>
+                    </div>
+                    <div id="wyvernHelp" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <ul class="help-list">
+                                <li><strong>Bands:</strong> 50-200+ spectral bands</li>
+                                <li><strong>Format:</strong> ENVI format or GeoTIFF cube</li>
+                                <li><strong>Resolution:</strong> 5m-10m</li>
+                                <li><strong>Source:</strong> <a href="#" class="external-link">Wyvern Open Data Portal</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="offline-note">
+                <i class="fas fa-info-circle"></i>
+                <p>You're currently in offline mode. To download new satellite data, please connect to the internet or use a USB device to transfer pre-downloaded data.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Tab switching functionality
+    document.querySelectorAll('.tab-item').forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            tab.classList.add('active');
+            const tabId = tab.getAttribute('data-tab') + '-tab';
+            document.getElementById(tabId).classList.add('active');
+        });
+    });
+    
+    // Region selection logic
+    document.getElementById('region').addEventListener('change', function() {
+        const regionMapContainer = document.getElementById('regionMapContainer');
+        if (this.value === 'custom') {
+            regionMapContainer.style.display = 'block';
+            // Initialize map if needed
+            if (!window.regionMapInitialized) {
+                setTimeout(() => {
+                    const map = L.map('regionMap').setView([34.052, -118.243], 10);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(map);
+                    
+                    // Add draw controls
+                    const drawnItems = new L.FeatureGroup();
+                    map.addLayer(drawnItems);
+                    
+                    // Simulate draw control functionality
+                    let polygon = L.polygon([
+                        [34.05, -118.25],
+                        [34.07, -118.23],
+                        [34.06, -118.21],
+                        [34.04, -118.22]
+                    ], {
+                        color: '#3388ff',
+                        fillOpacity: 0.2
+                    }).addTo(map);
+                    
+                    window.regionMapInitialized = true;
+                }, 100);
+            }
+        } else {
+            regionMapContainer.style.display = 'none';
+        }
+    });
+    
+    // File upload interface
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadPreview = document.getElementById('uploadPreview');
+    
+    dropzone.addEventListener('click', () => fileInput.click());
+    
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+    });
+    
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+    
+    fileInput.addEventListener('change', () => {
+        handleFiles(fileInput.files);
+    });
+    
+    function handleFiles(files) {
+        uploadPreview.innerHTML = '';
+        
+        Array.from(files).forEach(file => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            
+            const fileIcon = document.createElement('i');
+            fileIcon.className = 'fas fa-file-archive';
+            
+            const fileInfo = document.createElement('div');
+            fileInfo.className = 'file-info';
+            
+            const fileName = document.createElement('span');
+            fileName.className = 'file-name';
+            fileName.textContent = file.name;
+            
+            const fileSize = document.createElement('span');
+            fileSize.className = 'file-size';
+            fileSize.textContent = formatFileSize(file.size);
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn btn-icon btn-remove';
+            removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            removeBtn.addEventListener('click', () => {
+                fileItem.remove();
+            });
+            
+            fileInfo.appendChild(fileName);
+            fileInfo.appendChild(fileSize);
+            
+            fileItem.appendChild(fileIcon);
+            fileItem.appendChild(fileInfo);
+            fileItem.appendChild(removeBtn);
+            
+            uploadPreview.appendChild(fileItem);
+        });
+    }
+    
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    // USB device scanning simulation
+    document.getElementById('scanUSB').addEventListener('click', function() {
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+        
+        setTimeout(() => {
+            button.disabled = false;
+            button.innerHTML = 'Scan for Devices';
+            document.getElementById('deviceList').style.display = 'block';
+        }, 1500);
+    });
+</script>
+{% endblock %}
