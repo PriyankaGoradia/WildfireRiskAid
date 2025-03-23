@@ -1,0 +1,19 @@
+
+  bst.update(dtrain, iteration=i, fobj=obj)
+✅ Model saved as xgboost_wildfire_model.joblib
+✅ XGBoost Evaluation Results:
+Accuracy: 0.9816
+
+Confusion Matrix:
+ [[1853   17]
+ [  20  120]]
+
+Classification Report:
+               precision    recall  f1-score   support
+
+           0       0.99      0.99      0.99      1870
+           1       0.88      0.86      0.87       140
+
+    accuracy                           0.98      2010
+   macro avg       0.93      0.92      0.93      2010
+weighted avg       0.98      0.98      0.98      2010

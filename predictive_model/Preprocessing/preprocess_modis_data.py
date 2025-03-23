@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load MODIS fire detection CSV
-df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Data/fire_archive_M-C61_Alberta_2023.csv")
+df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Data-2024/MODIS_Alberta_2024.csv")
 
 # Keep only relevant columns
 df = df[[
@@ -42,5 +42,5 @@ df = df.drop(columns=['Date', 'Time'])
 df = df.reset_index(drop=True)
 
 # Save cleaned file
-df.to_csv("cleaned_modis_fires.csv", index=False)
+df.to_csv("cleaned_MODIS_Alberta_2024.csv", index=False)
 print("MODIS fire data cleaned and saved as cleaned_modis_fires.csv")

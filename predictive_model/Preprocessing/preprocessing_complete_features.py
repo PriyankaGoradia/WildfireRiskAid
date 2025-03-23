@@ -2,7 +2,7 @@ import pandas as pd
 import json
 
 # Load the raw dataset
-df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Data/Alberta_Complete_Wildfire_Features.csv")
+df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Data-2023/Alberta_Complete_Wildfire_Features.csv")
 
 # Show column names to verify structure
 print("Available columns:", df.columns.tolist())
@@ -28,5 +28,5 @@ expected_cols = ['Lat', 'Lon', 'NDVI', 'NBR', 'NDWI', 'Temp', 'Wind_Dir', 'Wind_
 df = df[[col for col in expected_cols if col in df.columns]]
 
 # Save to CSV
-df.to_csv("preprocessed_fire_data.csv", index=False)
+df.to_csv("preprocessed_Alberta_Complete_Wildfire_Feature.csv", index=False)
 print("✅ Preprocessed feature data saved as preprocessed_fire_data.csv")
