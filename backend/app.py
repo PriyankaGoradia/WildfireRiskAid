@@ -6,9 +6,12 @@ from flask_sqlalchemy import SQLAlchemy
 from geoalchemy2 import Geometry
 from sqlalchemy.dialects.postgresql import JSONB
 from gpt4all import GPT4All
+from werkzeug.utils import secure_filename
 import numpy as np
 import json
 import os
+import joblib
+import pandas as pd
 
 # load env variables
 load_dotenv()
@@ -22,6 +25,9 @@ app = Flask(__name__, static_folder=static_dir, template_folder=template_dir)
 
 # Initialize GPT4ALL
 model = GPT4All("Meta-Llama-3-8B-Instruct.Q4_0.gguf")
+
+# load the XGBoost predictive model
+xgb_model = joblib.load('/Users/hwey/Desktop/projects/WildfireRiskAid/predictive_model/XgBoost/xgboost_wildfire_model.joblib')
 
 # load configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://hwey:1234@localhost:5432/wildfire_db'
@@ -154,6 +160,70 @@ def summarize_vegetation_indices(indices_data):
     
     return summary
 
+# Analyze the wildfire risk with gpt4all
+def analyze_with_gpt4all(data):
+    # Create a summary of the data instead of sending the entire dataset
+    summary = {
+        'num_rows': len(data),
+        'columns': list(data.columns),
+        'ndvi_avg': data['NDVI'].mean() if 'NDVI' in data.columns else None,
+        'nbr_avg': data['NBR'].mean() if 'NBR' in data.columns else None,
+        'ndwi_avg': data['NDWI'].mean() if 'NDWI' in data.columns else None,
+        'temp_avg': data['Temp'].mean() if 'Temp' in data.columns else None,
+        'humidity_avg': data['Humidity'].mean() if 'Humidity' in data.columns else None,
+        'wind_spd_avg': data['Wind_Spd'].mean() if 'Wind_Spd' in data.columns else None,
+        'elev_avg': data['Elev'].mean() if 'Elev' in data.columns else None,
+        'slope_avg': data['Slope'].mean() if 'Slope' in data.columns else None
+    }
+    
+    # Add high-risk information if wildfire probability has been calculated
+    if 'Wildfire_Probability' in data.columns:
+        summary['avg_probability'] = data['Wildfire_Probability'].mean()
+        summary['max_probability'] = data['Wildfire_Probability'].max()
+        summary['high_risk_count'] = (data['Wildfire_Probability'] > 0.7).sum()
+        summary['medium_risk_count'] = ((data['Wildfire_Probability'] > 0.4) & (data['Wildfire_Probability'] <= 0.7)).sum()
+        summary['low_risk_count'] = (data['Wildfire_Probability'] <= 0.4).sum()
+    
+    # Create a prompt with the summary instead of the entire dataset
+    prompt = f"""Analyze the following wildfire risk data summary:
+    
+    Dataset size: {summary['num_rows']} locations
+    
+    Average metrics:
+    - NDVI (vegetation health): {summary['ndvi_avg']:.3f} if applicable
+    - NBR (burn ratio): {summary['nbr_avg']:.3f} if applicable
+    - NDWI (moisture): {summary['ndwi_avg']:.3f} if applicable
+    - Temperature: {summary['temp_avg']:.2f}°C if applicable
+    - Humidity: {summary['humidity_avg']:.2f}% if applicable
+    - Wind speed: {summary['wind_spd_avg']:.2f} km/h if applicable
+    - Elevation: {summary['elev_avg']:.2f} m if applicable
+    - Slope: {summary['slope_avg']:.2f}° if applicable
+    
+    """
+    
+    # Add risk analysis if available
+    if 'Wildfire_Probability' in data.columns:
+        prompt += f"""
+    Wildfire risk assessment:
+    - Average probability: {summary['avg_probability']:.3f}
+    - Maximum probability: {summary['max_probability']:.3f}
+    - High risk locations (>70%): {summary['high_risk_count']} ({summary['high_risk_count']/summary['num_rows']*100:.1f}%)
+    - Medium risk locations (40-70%): {summary['medium_risk_count']} ({summary['medium_risk_count']/summary['num_rows']*100:.1f}%)
+    - Low risk locations (<40%): {summary['low_risk_count']} ({summary['low_risk_count']/summary['num_rows']*100:.1f}%)
+    """
+    
+    prompt += """
+    Based on this data, provide:
+    1. An assessment of the overall wildfire risk in the analyzed region
+    2. Key factors contributing to the risk
+    3. Recommendations for monitoring and prevention
+    """
+    
+    # Generate response using GPT4ALL
+    response = model.generate(prompt, max_tokens=1024)
+    
+    return response.strip()
+
 ################### DATABASE #################
 
 # Define models
@@ -256,6 +326,16 @@ class ModelConfiguration(db.Model):
     parameters = db.Column(JSONB)
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
+class PredictionResult(db.Model):
+    __tablename__ = 'prediction_results'
+    
+    prediction_id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_date = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    prediction_data = db.Column(JSONB)  # Store prediction results as JSON
+    analysis_summary = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+
 ################### ROUTES ###################
 @app.route('/')
 def home():
@@ -264,91 +344,195 @@ def home():
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     if request.method == 'POST':
-        # Check if the request is a file upload or JSON stats
-        if request.content_type and 'multipart/form-data' in request.content_type:
-            # Handle file upload
-            if 'satellite_image' not in request.files:
-                return jsonify({'error': 'No file part'}), 400
-                
-            file = request.files['satellite_image']
-            if file.filename == '':
-                return jsonify({'error': 'No selected file'}), 400
-                
-            # Get form data
-            acquisition_date = request.form.get('acquisition_date')
-            sensor_type = request.form.get('sensor_type')
-            resolution = request.form.get('resolution')
-            region = request.form.get('region')
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"})
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"})
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            # Load the CSV data
+            df = pd.read_csv(filepath)
+
+            # Ensure required columns are present
+            required_columns = ['NDVI', 'NBR', 'NDWI', 'Temp', 'Wind_Dir', 'Wind_Spd', 'Humidity', 'Elev', 'Slope', 'Latitude', 'Longitude']
+            if not all(col in df.columns for col in required_columns):
+                return jsonify({"error": "Missing required columns in CSV"})
+
+            # Predict wildfire probability
+            features = df[required_columns]
+            wildfire_probabilities = xgb_model.predict_proba(features)[:, 1]  # Get probability of wildfire
+            df['Wildfire_Probability'] = wildfire_probabilities
+
+            # Analyze data with GPT-4All
+            gpt_analysis = analyze_with_gpt4all(df)
             
-            # Save the file
-            filename = file.filename
-            file_path = os.path.join('backend', 'static', 'uploads', filename)
-            os.makedirs(os.path.join('backend', 'static', 'uploads'), exist_ok=True)
-            file.save(file_path)
+            # Store prediction results in database
+            prediction_data = {
+                'num_locations': len(df),
+                'avg_probability': float(np.mean(wildfire_probabilities)),
+                'max_probability': float(np.max(wildfire_probabilities)),
+                'high_risk_locations': int(np.sum(wildfire_probabilities > 0.7))
+            }
             
-            # Create a new satellite image stats record
-            new_stats = SatelliteImageStats(
-                image_name=filename,
-                acquisition_date=datetime.fromisoformat(acquisition_date) if acquisition_date else datetime.now(timezone.utc),
-                sensor_type=sensor_type or 'Unknown',
-                resolution=float(resolution) if resolution else 0.0,
-                cloud_cover_percentage=0.0,  # Would be calculated from the image
-                image_metadata={'region': region}
+            new_prediction = PredictionResult(
+                filename=filename,
+                prediction_data=prediction_data,
+                analysis_summary=gpt_analysis[:500]  # Store a truncated version of the analysis
             )
-            db.session.add(new_stats)
+            db.session.add(new_prediction)
             db.session.commit()
-            
-            return jsonify({'message': 'File upload successful', 'stats_id': new_stats.stats_id})
-        else:
-            # Handle JSON stats upload (existing code)
-            stats_data = request.json
-            new_stats = SatelliteImageStats(
-                image_name=stats_data['image_name'],
-                acquisition_date=datetime.fromisoformat(stats_data['acquisition_date']),
-                sensor_type=stats_data['sensor_type'],
-                resolution=stats_data['resolution'],
-                cloud_cover_percentage=stats_data.get('cloud_cover_percentage'),
-                region_geometry=stats_data.get('region_geometry'),
-                image_metadata=stats_data.get('metadata')
-            )
-            db.session.add(new_stats)
-            db.session.commit()
-            
-            # Process spectral band statistics
-            for band_data in stats_data.get('spectral_bands', []):
-                band_stats = SpectralStatistics(
-                    stats_id=new_stats.stats_id,
-                    band_name=band_data['band_name'],
-                    band_number=band_data.get('band_number'),
-                    wavelength_nm=band_data.get('wavelength_nm'),
-                    min_value=band_data.get('min_value'),
-                    max_value=band_data.get('max_value'),
-                    mean_value=band_data.get('mean_value'),
-                    median_value=band_data.get('median_value'),
-                    std_dev=band_data.get('std_dev'),
-                    histogram_data=band_data.get('histogram_data')
-                )
-                db.session.add(band_stats)
-            
-            # Process spectral index statistics
-            for index_data in stats_data.get('spectral_indices', []):
-                index_stats = SpectralIndexStatistics(
-                    stats_id=new_stats.stats_id,
-                    index_name=index_data['index_name'],
-                    formula=index_data.get('formula'),
-                    min_value=index_data.get('min_value'),
-                    max_value=index_data.get('max_value'),
-                    mean_value=index_data.get('mean_value'),
-                    median_value=index_data.get('median_value'),
-                    std_dev=index_data.get('std_dev'),
-                    percentile_data=index_data.get('percentile_data')
-                )
-                db.session.add(index_stats)
-            
-            db.session.commit()
-            return jsonify({'message': 'Statistics upload successful', 'stats_id': new_stats.stats_id})
-    
+
+            # Return results
+            return jsonify({
+                "wildfire_predictions": df.to_dict(orient='records'),
+                "gpt_analysis": gpt_analysis,
+                "prediction_id": new_prediction.prediction_id
+            })
     return render_template('upload.html')
+
+@app.route('/upload/csv', methods=['POST'])
+def upload_csv():
+    if 'csvFile' not in request.files:  # Changed from 'file' to 'csvFile' to match the form input name
+        return jsonify({"error": "No file part"})
+    
+    file = request.files['csvFile']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"})
+    
+    if file:
+        filename = secure_filename(file.filename)
+        
+        # Make sure UPLOAD_FOLDER is defined
+        if 'UPLOAD_FOLDER' not in app.config:
+            app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
+            
+        # Ensure the upload directory exists
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        try:
+            # Load the CSV data
+            df = pd.read_csv(filepath)
+
+            # Get additional form data
+            data_type = request.form.get('csvDataType', 'feature_data')
+            region = request.form.get('csvRegion', 'from_csv')
+            run_model = request.form.get('runModel', 'off') == 'on'
+            
+            # Check for required columns based on data type
+            if data_type == 'feature_data':
+                # For XGBoost prediction model
+                required_columns = ['NDVI','NBR','NDWI','Temp','Wind_Dir','Wind_Spd','Humidity','Elev','Slope']
+                if not all(col in df.columns for col in required_columns):
+                    return jsonify({"error": f"Missing required columns in CSV. Required: {', '.join(required_columns)}"})
+                
+                if run_model:
+                    # Predict wildfire probability
+                    features = df[required_columns]
+                    wildfire_probabilities = xgb_model.predict_proba(features)[:, 1]  # Get probability of wildfire
+                    df['Wildfire_Probability'] = wildfire_probabilities
+
+                    # Analyze data with GPT-4All
+                    gpt_analysis = analyze_with_gpt4all(df)
+                    
+                    # Store prediction results in database
+                    prediction_data = {
+                        'num_locations': len(df),
+                        'avg_probability': float(np.mean(wildfire_probabilities)),
+                        'max_probability': float(np.max(wildfire_probabilities)),
+                        'high_risk_locations': int(np.sum(wildfire_probabilities > 0.7))
+                    }
+                    
+                    new_prediction = PredictionResult(
+                        filename=filename,
+                        prediction_data=prediction_data,
+                        analysis_summary=gpt_analysis[:500]  # Store a truncated version of the analysis
+                    )
+                    db.session.add(new_prediction)
+                    db.session.commit()
+
+                    # Return results
+                    return jsonify({
+                        "success": True,
+                        "message": "File uploaded and processed successfully",
+                        "wildfire_predictions": df.to_dict(orient='records'),
+                        "gpt_analysis": gpt_analysis,
+                        "prediction_id": new_prediction.prediction_id
+                    })
+                else:
+                    # Just save the file without running the model
+                    return jsonify({
+                        "success": True,
+                        "message": "File uploaded successfully",
+                        "rows": len(df),
+                        "columns": list(df.columns)
+                    })
+            
+            elif data_type == 'coordinates':
+                # Handle coordinate boundary data
+                required_columns = ['latitude', 'longitude']
+                if not all(col.lower() in [c.lower() for c in df.columns] for col in required_columns):
+                    return jsonify({"error": f"Missing required columns in CSV. Required: {', '.join(required_columns)}"})
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Coordinate boundary data uploaded successfully",
+                    "points": len(df)
+                })
+                
+            elif data_type == 'weather':
+                # Handle weather conditions data
+                required_columns = ['date', 'temperature', 'humidity', 'wind_speed']
+                if not all(col.lower() in [c.lower() for c in df.columns] for col in required_columns):
+                    return jsonify({"error": f"Missing required columns in CSV. Required: {', '.join(required_columns)}"})
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Weather condition data uploaded successfully",
+                    "days": len(df)
+                })
+            
+            # Default response if no specific handling
+            return jsonify({
+                "success": True,
+                "message": "File uploaded successfully",
+                "rows": len(df),
+                "columns": list(df.columns)
+            })
+            
+        except Exception as e:
+            return jsonify({
+                "error": f"Error processing CSV file: {str(e)}"
+            })
+
+    return jsonify({"error": "Failed to process file"})
+
+@app.route('/predictions', methods=['GET'])
+def view_predictions():
+    predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).all()
+    return render_template('predictions.html', predictions=predictions)
+
+@app.route('/predictions/<int:prediction_id>', methods=['GET'])
+def prediction_details(prediction_id):
+    prediction = PredictionResult.query.get_or_404(prediction_id)
+    return render_template('prediction_details.html', prediction=prediction)
+
+@app.route('/api/predictions', methods=['GET'])
+def get_predictions():
+    predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).all()
+    return jsonify([{
+        'prediction_id': p.prediction_id,
+        'filename': p.filename,
+        'upload_date': p.upload_date.isoformat(),
+        'avg_probability': p.prediction_data.get('avg_probability'),
+        'high_risk_locations': p.prediction_data.get('high_risk_locations')
+    } for p in predictions])
 
 @app.route('/analyze/<int:stats_id>')
 def analyze(stats_id):
@@ -426,6 +610,15 @@ def chat():
                     } for idx in indices
                 ]
             }
+    elif context_type == 'prediction' and context_id:
+        prediction = PredictionResult.query.get(context_id)
+        if prediction:
+            context = {
+                'filename': prediction.filename,
+                'upload_date': prediction.upload_date.isoformat(),
+                'prediction_data': prediction.prediction_data,
+                'analysis_summary': prediction.analysis_summary
+            }
     
     # Handle special commands for summarization
     if query.lower().startswith('summarize'):
@@ -453,19 +646,49 @@ def chat():
             
             response = summarize_vegetation_indices(indices)
         
+        elif 'prediction' in query.lower() or 'predictions' in query.lower():
+            # Summarize prediction results
+            prediction_id = context_id if context_type == 'prediction' else None
+            
+            if prediction_id:
+                prediction = PredictionResult.query.get(prediction_id)
+                if prediction:
+                    response = f"Prediction Summary for {prediction.filename}:\n"
+                    response += f"- Upload Date: {prediction.upload_date.strftime('%Y-%m-%d %H:%M')}\n"
+                    response += f"- Locations Analyzed: {prediction.prediction_data.get('num_locations')}\n"
+                    response += f"- Average Wildfire Probability: {prediction.prediction_data.get('avg_probability', 0):.2f}\n"
+                    response += f"- Maximum Wildfire Probability: {prediction.prediction_data.get('max_probability', 0):.2f}\n"
+                    response += f"- High Risk Locations: {prediction.prediction_data.get('high_risk_locations', 0)}\n\n"
+                    response += f"Analysis Summary:\n{prediction.analysis_summary}"
+                else:
+                    response = "Prediction not found."
+            else:
+                recent_predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(5).all()
+                if recent_predictions:
+                    response = "Recent Prediction Summaries:\n\n"
+                    for p in recent_predictions:
+                        response += f"Prediction ID {p.prediction_id} - {p.filename}:\n"
+                        response += f"- Upload Date: {p.upload_date.strftime('%Y-%m-%d %H:%M')}\n"
+                        response += f"- Average Probability: {p.prediction_data.get('avg_probability', 0):.2f}\n"
+                        response += f"- High Risk Locations: {p.prediction_data.get('high_risk_locations', 0)}\n\n"
+                else:
+                    response = "No prediction results available."
+        
         else:
             # General summary - combine multiple summaries
-            recent_stats = SatelliteImageStats.query.order_by(SatelliteImageStats.acquisition_date.desc()).first()
+            recent_predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(3).all()
             recent_assessments = RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(5).all()
+            
+            prediction_summary = "Recent Predictions:\n"
+            if recent_predictions:
+                for p in recent_predictions:
+                    prediction_summary += f"- {p.filename}: Avg Prob {p.prediction_data.get('avg_probability', 0):.2f}, High Risk: {p.prediction_data.get('high_risk_locations', 0)}\n"
+            else:
+                prediction_summary += "No recent predictions available.\n"
             
             risk_summary = summarize_risk_data(recent_assessments)
             
-            indices = []
-            if recent_stats:
-                indices = SpectralIndexStatistics.query.filter_by(stats_id=recent_stats.stats_id).all()
-            veg_summary = summarize_vegetation_indices(indices)
-            
-            response = f"FireSight Dashboard Summary\n\n{risk_summary}\n\n{veg_summary}"
+            response = f"FireSight Dashboard Summary\n\n{prediction_summary}\n\n{risk_summary}"
     
     else:
         # Regular chat response
@@ -495,18 +718,42 @@ def get_summary():
         
         summary = summarize_vegetation_indices(indices)
     
+    elif summary_type == 'prediction':
+        if entity_id:
+            prediction = PredictionResult.query.get_or_404(entity_id)
+            summary = f"Prediction Summary for {prediction.filename}:\n"
+            summary += f"- Upload Date: {prediction.upload_date.strftime('%Y-%m-%d %H:%M')}\n"
+            summary += f"- Locations Analyzed: {prediction.prediction_data.get('num_locations')}\n"
+            summary += f"- Average Wildfire Probability: {prediction.prediction_data.get('avg_probability', 0):.2f}\n"
+            summary += f"- Maximum Wildfire Probability: {prediction.prediction_data.get('max_probability', 0):.2f}\n"
+            summary += f"- High Risk Locations: {prediction.prediction_data.get('high_risk_locations', 0)}\n\n"
+            summary += f"Analysis Summary:\n{prediction.analysis_summary}"
+        else:
+            recent_predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(5).all()
+            if recent_predictions:
+                summary = "Recent Prediction Summaries:\n\n"
+                for p in recent_predictions:
+                    summary += f"Prediction ID {p.prediction_id} - {p.filename}:\n"
+                    summary += f"- Upload Date: {p.upload_date.strftime('%Y-%m-%d %H:%M')}\n"
+                    summary += f"- Average Probability: {p.prediction_data.get('avg_probability', 0):.2f}\n"
+                    summary += f"- High Risk Locations: {p.prediction_data.get('high_risk_locations', 0)}\n\n"
+            else:
+                summary = "No prediction results available."
+    
     else:  # general summary
-        recent_stats = SatelliteImageStats.query.order_by(SatelliteImageStats.acquisition_date.desc()).first()
+        recent_predictions = PredictionResult.query.order_by(PredictionResult.upload_date.desc()).limit(3).all()
         recent_assessments = RiskAssessment.query.order_by(RiskAssessment.assessment_date.desc()).limit(5).all()
+        
+        prediction_summary = "Recent Predictions:\n"
+        if recent_predictions:
+            for p in recent_predictions:
+                prediction_summary += f"- {p.filename}: Avg Prob {p.prediction_data.get('avg_probability', 0):.2f}, High Risk: {p.prediction_data.get('high_risk_locations', 0)}\n"
+        else:
+            prediction_summary += "No recent predictions available.\n"
         
         risk_summary = summarize_risk_data(recent_assessments)
         
-        indices = []
-        if recent_stats:
-            indices = SpectralIndexStatistics.query.filter_by(stats_id=recent_stats.stats_id).all()
-        veg_summary = summarize_vegetation_indices(indices)
-        
-        summary = f"FireSight Dashboard Summary\n\n{risk_summary}\n\n{veg_summary}"
+        summary = f"FireSight Dashboard Summary\n\n{prediction_summary}\n\n{risk_summary}"
     
     return jsonify({"summary": summary})
 

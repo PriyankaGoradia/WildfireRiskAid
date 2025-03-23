@@ -175,94 +175,36 @@
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Satellite imagery panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <i class="fas fa-satellite"></i>
-                    Satellite Imagery
-                </div>
-                <div class="panel-actions">
-                    <button class="btn btn-sm btn-outline">
-                        <i class="fas fa-calendar-alt"></i> 
-                        <span class="hide-mobile">Historical</span>
-                    </button>
-                    <a href="{{ url_for('upload') }}" class="btn btn-sm btn-primary">
-                        <i class="fas fa-upload"></i>
-                        <span class="hide-mobile">Upload New</span>
-                    </a>
-                </div>
+    <!-- AI Assistant panel -->
+    <div class="panel panel-dark">
+        <div class="panel-header">
+            <div class="panel-title">
+                <i class="fas fa-robot"></i>
+                FireSight AI Assistant
             </div>
-            <div class="panel-body no-padding">
-                <div class="image-viewer">
-                    <div class="image-viewer-header">
-                        <div class="image-viewer-title">Sentinel-2 • 2025-03-22</div>
-                        <div class="image-viewer-controls">
-                            <button class="btn btn-sm btn-dark">
-                                <i class="fas fa-layer-group"></i>
-                            </button>
-                            <button class="btn btn-sm btn-dark">
-                                <i class="fas fa-expand"></i>
-                            </button>
-                            <button class="btn btn-sm btn-dark">
-                                <i class="fas fa-download"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="image-viewer-body">
-                        <img src="{{ url_for('static', filename='uploads/' + current_image|default('satellite_latest.jpg')) }}" alt="Satellite Image" class="image-viewer-img">
-                            <button class="band-pill active">Natural Color</button>
-                            <button class="band-pill">False Color</button>
-                            <button class="band-pill">NDVI</button>
-                            <button class="band-pill">SWIR</button>
-                        </div>
-                    </div>
-                    <div class="image-viewer-footer">
-                        <button class="btn btn-sm btn-dark">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <div class="image-viewer-meta">
-                            <div class="meta-date">March 22, 2025</div>
-                            <div class="meta-time">08:45 AM</div>
-                        </div>
-                        <button class="btn btn-sm btn-dark">
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                    </div>
-                </div>
+            <div class="panel-actions">
+                <button class="btn btn-sm btn-outline-light">
+                    <i class="fas fa-history"></i>
+                    <span class="hide-mobile">History</span>
+                </button>
             </div>
         </div>
-
-        <!-- AI Assistant panel -->
-        <div class="panel panel-dark">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <i class="fas fa-robot"></i>
-                    FireSight AI Assistant
-                </div>
-                <div class="panel-actions">
-                    <button class="btn btn-sm btn-outline-light">
-                        <i class="fas fa-history"></i>
-                        <span class="hide-mobile">History</span>
-                    </button>
-                </div>
-            </div>
-            <div class="panel-body">
-                <div class="chatbot-container">
-                    <div class="chatbot-messages">
-                        <div class="chatbot-message system">
-                            <div class="chatbot-message-content">
-                                <p>Welcome to FireSight AI Assistant. How can I help with your wildfire assessment today?</p>
-                            </div>
+        <div class="panel-body">
+            <div class="chatbot-container">
+                <div class="chatbot-messages">
+                    <div class="chatbot-message system">
+                        <div class="chatbot-message-content">
+                            <p>Welcome to FireSight AI Assistant. How can I help with your wildfire assessment today?</p>
                         </div>
                     </div>
-                    <div class="chatbot-footer">
-                        <input type="text" id="chatInput" class="chatbot-input" placeholder="Ask about wildfire risks, terrain analysis, or request summaries...">
-                        <button id="sendChatBtn" class="chatbot-button">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-                    </div>
+                </div>
+                <div class="chatbot-footer">
+                    <input type="text" id="chatInput" class="chatbot-input" placeholder="Ask about wildfire risks, terrain analysis, or request summaries...">
+                    <button id="sendChatBtn" class="chatbot-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
                 </div>
             </div>
         </div>
@@ -609,6 +551,54 @@
         
         // Add suggestions when page loads
         addSuggestionChips();
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if there's a GPT analysis in localStorage
+        const gptAnalysis = localStorage.getItem('firesight_gpt_analysis');
+        
+        if (gptAnalysis) {
+            // Get the actual chat messages container from your HTML
+            const messagesContainer = document.querySelector('.chatbot-messages');
+            
+            if (messagesContainer) {
+                // Add the analysis as a system message
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'chatbot-message system';
+                
+                // Process the analysis text with proper formatting
+                const paragraphs = gptAnalysis.split('\n\n').filter(p => p.trim() !== '');
+                const processedText = paragraphs.map(p => {
+                    // Handle lists
+                    if (p.includes('- ')) {
+                        const listItems = p.split('\n').map(line => {
+                            if (line.startsWith('- ')) {
+                                return `<li>${line.substring(2)}</li>`;
+                            }
+                            return `<p>${line}</p>`;
+                        }).join('');
+                        return `<ul>${listItems}</ul>`;
+                    }
+                    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+                }).join('');
+                
+                messageDiv.innerHTML = `
+                    <div class="chatbot-message-content">
+                        <p><strong>📊 Analysis of Uploaded Data:</strong></p>
+                        ${processedText}
+                    </div>
+                `;
+                
+                // Add to chat
+                messagesContainer.appendChild(messageDiv);
+                
+                // Scroll to show the new message
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            // Clear the stored analysis so it doesn't appear again on page refresh
+            localStorage.removeItem('firesight_gpt_analysis');
+        }
     });
 
     // Allow sending message with Enter key

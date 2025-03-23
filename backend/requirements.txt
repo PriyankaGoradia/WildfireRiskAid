@@ -8,3 +8,6 @@ psycopg2-binary
 flask-sqlalchemy
 python-dotenv
 geoalchemy2
+xgboost
+scikit-learn
+pandas
