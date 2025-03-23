@@ -5,7 +5,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import joblib
 
 # Load the preprocessed data
-df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/preprocessed_data.csv")
+df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/train.csv")
 
 # Define features and labels
 X = df[['NDVI', 'NBR']]  # Add NDWI or other features if available
@@ -27,4 +27,4 @@ print("\nClassification Report:\n", classification_report(y_test, y_pred))
 
 # Save the model to disk
 joblib.dump(model, "fire_risk_model.pkl")
-print("\nModel saved as fire_risk_model.pkl")
+print("\nModel saved as fire_risk_random_forest_model.pkl")

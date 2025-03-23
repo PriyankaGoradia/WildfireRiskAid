@@ -3,7 +3,7 @@ import ast
 from sklearn.model_selection import train_test_split
 
 # Load the CSV exported from GEE
-df = pd.read_csv("Alberta_NDVI_NBR_Extracted.csv")
+df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Alberta_NDVI_NBR_Extracted_10k.csv")
 
 # Convert geometry column to lat/lon
 df['coordinates'] = df['.geo'].apply(lambda x: ast.literal_eval(x)['coordinates'])
