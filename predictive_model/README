@@ -1,1 +1,29 @@
 
+## Overview
+
+
+# Using Randomforest
+- Extracted NDVI and NBR from Sentinel-2 and Landsat 8 imagery using Google Earth Engine (GEE)
+- Simulated fire risk labels using vegetation and burn indices
+- Trained a Random Forest model to predict fire-prone areas
+- Integrated a Generative AI model (Gemini or Cohere) to summarize risk zones in natural language
+
+# Spectral Incdices used and Data Labelling
+- NDVI < 0.2 → vegetation is sparse/dry (potential fuel)
+- NBR < 0.3 → possible burn signature or lack of vegetation
+This is a quick way to label fire-prone areas for Random Forest model when we don’t have ground-truth fire data.
+
+---
+
+## Workflow
+
+### 1. Data Extraction
+- Used GEE to extract NDVI and NBR values for Alberta during wildfire season (May–September 2023)
+- Exported 5,000 sampled points to CSV with latitude/longitude
+
+### 2. Preprocessing
+Python script to:
+- Extract coordinates from `.geo` column
+- Clean columns and simulate fire labels:
+```python
+df['Fire_Label'] = ((df['NDVI'] < 0.2) & (df['NBR'] < 0.3)).astype(int)

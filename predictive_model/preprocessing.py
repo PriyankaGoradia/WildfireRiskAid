@@ -1,22 +1,25 @@
 import pandas as pd
 import ast
+from sklearn.model_selection import train_test_split
 
-# Load the exported Earth Engine CSV
-df = pd.read_csv("/workspaces/WildfireRiskAid/predictive_model/Alberta_NDVI_NBR_Extracted.csv")
+# Load the CSV exported from GEE
+df = pd.read_csv("Alberta_NDVI_NBR_Extracted.csv")
 
-# Convert the .geo column from string to actual coordinates
+# Convert geometry column to lat/lon
 df['coordinates'] = df['.geo'].apply(lambda x: ast.literal_eval(x)['coordinates'])
-
-# Extract lon and lat into separate columns
 df[['lon', 'lat']] = pd.DataFrame(df['coordinates'].tolist(), index=df.index)
 
 # Drop unnecessary columns
 df = df.drop(columns=['system:index', '.geo', 'coordinates'])
 
-# Create a fire risk label: simulate with thresholds on NDVI & NBR
+# Simulate Fire_Label
 df['Fire_Label'] = ((df['NDVI'] < 0.2) & (df['NBR'] < 0.3)).astype(int)
 
-# Save the preprocessed CSV
-df.to_csv("preprocessed_data.csv", index=False)
+# Split into training and testing sets
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
 
-print("Preprocessing complete. File saved as preprocessed_data.csv")
+# Save to CSV
+train_df.to_csv("train.csv", index=False)
+test_df.to_csv("test.csv", index=False)
+
+print("Split complete: train.csv and test.csv saved.")

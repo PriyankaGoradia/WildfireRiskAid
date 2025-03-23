@@ -55,9 +55,11 @@ Map.addLayer(medianComposite.select('NBR'), {min: -1, max: 1, palette: ['white',
 var samplePoints = medianComposite.sample({
   region: roi,
   scale: 30,
-  numPixels: 5000,
+  numPixels: 10000,  // Increased from 5000
+  seed: 42,          // Added seed for reproducibility
   geometries: true
 });
+
 
 Export.table.toDrive({
   collection: samplePoints,
