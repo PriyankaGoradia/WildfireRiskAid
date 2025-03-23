@@ -4,7 +4,7 @@ torch
 flask-cors
 numpy
 transformers
-psycopg2
+psycopg2-binary
 flask-sqlalchemy
 python-dotenv
 geoalchemy2
